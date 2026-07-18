@@ -32,6 +32,13 @@ PACKAGE_SETTINGS = {
     "ultimate": ("Ultimate VIP", ULTIMATE_COMMANDS, ULTIMATE_COOLDOWN_SECONDS),
 }
 
+PACKAGE_RANK = {
+    None: 0,
+    "vip": 1,
+    "diamond": 2,
+    "ultimate": 3,
+}
+
 
 def format_duration(seconds: int) -> str:
     seconds = max(0, int(seconds))
@@ -100,10 +107,23 @@ async def handle_reward_trigger(bot, rcon_service, player_name: str, phrase: str
         return {"delivered": False, "reason": "member_not_found"}
 
     owned_package = get_package_for_member(member)
-    if owned_package != requested_package:
+    owned_rank = PACKAGE_RANK.get(owned_package, 0)
+    requested_rank = PACKAGE_RANK.get(requested_package, 0)
+
+    if owned_rank < requested_rank:
         package_name = PACKAGE_SETTINGS[requested_package][0]
-        await announce(rcon_service, f"{player_name}: this command requires {package_name}.")
-        return {"delivered": False, "reason": "wrong_vip_tier", "owned": owned_package, "requested": requested_package}
+
+        await announce(
+            rcon_service,
+            f"{player_name}: this command requires {package_name}.",
+        )
+
+        return {
+            "delivered": False,
+            "reason": "wrong_vip_tier",
+            "owned": owned_package,
+            "requested": requested_package,
+        }
 
     display_name, commands, cooldown = PACKAGE_SETTINGS[requested_package]
     remaining = await get_action_cooldown_remaining(player_name, requested_package, cooldown)
