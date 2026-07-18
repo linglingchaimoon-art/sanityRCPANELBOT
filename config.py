@@ -88,10 +88,7 @@ def env_commands(name: str) -> list[str]:
 
     if (
         not isinstance(value, list)
-        or not all(
-            isinstance(item, str)
-            for item in value
-        )
+        or not all(isinstance(item, str) for item in value)
     ):
         raise RuntimeError(
             f"{name} must be a JSON list of strings"
@@ -109,14 +106,18 @@ DISCORD_TOKEN = os.getenv(
     "",
 ).strip()
 
-GUILD_ID = env_int("GUILD_ID")
+GUILD_ID = env_int(
+    "GUILD_ID"
+)
 
 
 # =========================================================
 # VIP roles
 # =========================================================
 
-VIP_ROLE_ID = env_int("VIP_ROLE_ID")
+VIP_ROLE_ID = env_int(
+    "VIP_ROLE_ID"
+)
 
 DIAMOND_VIP_ROLE_ID = env_int(
     "DIAMOND_VIP_ROLE_ID"
@@ -197,7 +198,7 @@ RCON_PORT = env_int(
 
 RCON_PASSWORD = os.getenv(
     "RCON_PASSWORD",
-    "test",
+    "",
 ).strip()
 
 RCON_USE_SSL = env_bool(
@@ -207,7 +208,7 @@ RCON_USE_SSL = env_bool(
 
 RCON_MOCK_COMMANDS = env_bool(
     "RCON_MOCK_COMMANDS",
-    True,
+    False,
 )
 
 DEBUG_RCON_MESSAGES = env_bool(
@@ -296,8 +297,8 @@ VIP_TRIGGERS = env_string_set(
 DIAMOND_TRIGGERS = env_string_set(
     "DIAMOND_TRIGGERS",
     (
-        "I Need Pickaxe,"
-        "d11_quick_chat_i_need_phrase_format pickaxe"
+        "I Have Pickaxe,"
+        "d11_quick_chat_i_have_phrase_format pickaxe"
     ),
 )
 
@@ -305,7 +306,7 @@ ULTIMATE_TRIGGERS = env_string_set(
     "ULTIMATE_TRIGGERS",
     (
         "I Need HQM,"
-        "d11_quick_chat_i_need_phrase_format hqm"
+        "d11_quick_chat_i_need_phrase_format metal.refined"
     ),
 )
 
@@ -314,7 +315,7 @@ OUTPOST_TRIGGERS = env_string_set(
     (
         "Let's Go,"
         "Lets Go,"
-        "d11_quick_chat_lets_go_phrase_format"
+        "d11_quick_chat_orders_slot_5"
     ),
 )
 
@@ -322,8 +323,7 @@ OUTPOST_CONFIRM_TRIGGERS = env_string_set(
     "OUTPOST_CONFIRM_TRIGGERS",
     (
         "Yes,"
-        "d11_quick_chat_yes_phrase_format yes,"
-        "d11_quick_chat_yes_phrase_format"
+        "d11_quick_chat_responses_slot_0"
     ),
 )
 
@@ -387,16 +387,6 @@ def validate_config() -> None:
         if not RCON_PASSWORD:
             missing.append("RCON_PASSWORD")
 
-    if OUTPOST_COOLDOWN_SECONDS < 0:
-        raise RuntimeError(
-            "OUTPOST_COOLDOWN_SECONDS cannot be negative"
-        )
-
-    if OUTPOST_CONFIRM_SECONDS <= 0:
-        raise RuntimeError(
-            "OUTPOST_CONFIRM_SECONDS must be greater than 0"
-        )
-
     if VIP_COOLDOWN_SECONDS < 0:
         raise RuntimeError(
             "VIP_COOLDOWN_SECONDS cannot be negative"
@@ -410,6 +400,16 @@ def validate_config() -> None:
     if ULTIMATE_COOLDOWN_SECONDS < 0:
         raise RuntimeError(
             "ULTIMATE_COOLDOWN_SECONDS cannot be negative"
+        )
+
+    if OUTPOST_COOLDOWN_SECONDS < 0:
+        raise RuntimeError(
+            "OUTPOST_COOLDOWN_SECONDS cannot be negative"
+        )
+
+    if OUTPOST_CONFIRM_SECONDS <= 0:
+        raise RuntimeError(
+            "OUTPOST_CONFIRM_SECONDS must be greater than 0"
         )
 
     if missing:

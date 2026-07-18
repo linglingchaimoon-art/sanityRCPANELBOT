@@ -25,27 +25,46 @@ from services.database import (
 )
 from services.helpers import get_package_for_member
 
+
 logger = logging.getLogger("sanity2x.rewards")
 
 
+# =========================================================
+# Package configuration
+# =========================================================
+
 PACKAGE_SETTINGS = {
-    "vip": (
-        "VIP",
-        VIP_COMMANDS,
-        VIP_COOLDOWN_SECONDS,
-    ),
-    "diamond": (
-        "Diamond VIP",
-        DIAMOND_COMMANDS,
-        DIAMOND_COOLDOWN_SECONDS,
-    ),
-    "ultimate": (
-        "Ultimate VIP",
-        ULTIMATE_COMMANDS,
-        ULTIMATE_COOLDOWN_SECONDS,
-    ),
+    "vip": {
+        "display_name": "VIP",
+        "commands": VIP_COMMANDS,
+        "cooldown": VIP_COOLDOWN_SECONDS,
+    },
+    "diamond": {
+        "display_name": "Diamond VIP",
+        "commands": DIAMOND_COMMANDS,
+        "cooldown": DIAMOND_COOLDOWN_SECONDS,
+    },
+    "ultimate": {
+        "display_name": "Ultimate VIP",
+        "commands": ULTIMATE_COMMANDS,
+        "cooldown": ULTIMATE_COOLDOWN_SECONDS,
+    },
 }
 
+
+# Higher packages can claim lower package rewards.
+#
+# VIP:
+# - VIP
+#
+# Diamond:
+# - VIP
+# - Diamond
+#
+# Ultimate:
+# - VIP
+# - Diamond
+# - Ultimate
 
 PACKAGE_RANKS = {
     None: 0,
@@ -54,6 +73,10 @@ PACKAGE_RANKS = {
     "ultimate": 3,
 }
 
+
+# =========================================================
+# Utility functions
+# =========================================================
 
 def format_duration(seconds: int) -> str:
     seconds = max(0, int(seconds))
@@ -79,14 +102,25 @@ def format_duration(seconds: int) -> str:
     return " ".join(parts[:2])
 
 
-def safe_text(value: str) -> str:
+def safe_text(value: object) -> str:
     return (
         str(value)
         .replace('"', "")
         .replace("\n", " ")
         .replace("\r", " ")
+        .replace("\u0000", "")
         .strip()
     )
+
+
+def can_use_package(
+    owned_package: str | None,
+    requested_package: str,
+) -> bool:
+    owned_rank = PACKAGE_RANKS.get(owned_package, 0)
+    requested_rank = PACKAGE_RANKS.get(requested_package, 0)
+
+    return owned_rank >= requested_rank
 
 
 async def fetch_member(
@@ -109,12 +143,21 @@ async def fetch_member(
 
     try:
         return await guild.fetch_member(discord_id)
+
     except discord.NotFound:
         logger.warning(
             "Discord member %s was not found.",
             discord_id,
         )
         return None
+
+    except discord.Forbidden:
+        logger.warning(
+            "The bot is not allowed to fetch Discord member %s.",
+            discord_id,
+        )
+        return None
+
     except discord.HTTPException:
         logger.exception(
             "Failed to fetch Discord member %s.",
@@ -122,6 +165,10 @@ async def fetch_member(
         )
         return None
 
+
+# =========================================================
+# In-game announcements
+# =========================================================
 
 async def announce(
     rcon_service,
@@ -134,6 +181,9 @@ async def announce(
         f"{SERVER_MESSAGE_PREFIX} {text}"
     )
 
+    if not clean_message:
+        return
+
     sent, response = await rcon_service.send_command(
         f'global.say "{clean_message}"'
     )
@@ -145,6 +195,10 @@ async def announce(
         )
 
 
+# =========================================================
+# Discord claim logging
+# =========================================================
+
 async def log_claim(
     bot,
     title: str,
@@ -154,21 +208,27 @@ async def log_claim(
     if not CLAIM_LOG_CHANNEL_ID:
         return
 
-    channel = bot.get_channel(
-        CLAIM_LOG_CHANNEL_ID
-    )
+    channel = bot.get_channel(CLAIM_LOG_CHANNEL_ID)
 
     if channel is None:
         try:
             channel = await bot.fetch_channel(
                 CLAIM_LOG_CHANNEL_ID
             )
+
         except discord.HTTPException:
             logger.exception(
                 "Failed to fetch claim log channel %s.",
                 CLAIM_LOG_CHANNEL_ID,
             )
             return
+
+    if not hasattr(channel, "send"):
+        logger.warning(
+            "Claim log channel %s cannot receive messages.",
+            CLAIM_LOG_CHANNEL_ID,
+        )
+        return
 
     embed = discord.Embed(
         title=title,
@@ -182,28 +242,16 @@ async def log_claim(
 
     try:
         await channel.send(embed=embed)
+
     except discord.HTTPException:
         logger.exception(
-            "Failed to send claim log."
+            "Failed to send the claim log embed."
         )
 
 
-def can_use_package(
-    owned_package: str | None,
-    requested_package: str,
-) -> bool:
-    owned_rank = PACKAGE_RANKS.get(
-        owned_package,
-        0,
-    )
-
-    requested_rank = PACKAGE_RANKS.get(
-        requested_package,
-        0,
-    )
-
-    return owned_rank >= requested_rank
-
+# =========================================================
+# VIP reward handling
+# =========================================================
 
 async def handle_reward_trigger(
     bot,
@@ -212,6 +260,8 @@ async def handle_reward_trigger(
     phrase: str,
     requested_package: str,
 ) -> dict:
+    requested_package = requested_package.strip().lower()
+
     if requested_package not in PACKAGE_SETTINGS:
         logger.warning(
             "Unknown requested package: %s",
@@ -224,9 +274,7 @@ async def handle_reward_trigger(
             "requested": requested_package,
         }
 
-    link = await get_link_by_gamertag(
-        player_name
-    )
+    link = await get_link_by_gamertag(player_name)
 
     if not link:
         await announce(
@@ -244,6 +292,7 @@ async def handle_reward_trigger(
 
     try:
         discord_id = int(link["discord_id"])
+
     except (KeyError, TypeError, ValueError):
         logger.error(
             "Invalid Discord ID stored for player %s: %r",
@@ -283,8 +332,15 @@ async def handle_reward_trigger(
             "reason": "member_not_found",
         }
 
-    owned_package = get_package_for_member(
-        member
+    owned_package = get_package_for_member(member)
+
+    logger.info(
+        "[PACKAGE CHECK] Player=%s Discord=%s "
+        "Owned=%s Requested=%s",
+        player_name,
+        member.id,
+        owned_package,
+        requested_package,
     )
 
     if not can_use_package(
@@ -293,7 +349,7 @@ async def handle_reward_trigger(
     ):
         package_name = PACKAGE_SETTINGS[
             requested_package
-        ][0]
+        ]["display_name"]
 
         await announce(
             rcon_service,
@@ -303,6 +359,19 @@ async def handle_reward_trigger(
             ),
         )
 
+        await log_claim(
+            bot,
+            "❌ Reward denied",
+            (
+                f"**Player:** `{player_name}`\n"
+                f"**Discord:** {member.mention}\n"
+                f"**Owned tier:** `{owned_package}`\n"
+                f"**Requested tier:** `{requested_package}`\n"
+                f"**Reason:** Wrong VIP tier"
+            ),
+            False,
+        )
+
         return {
             "delivered": False,
             "reason": "wrong_vip_tier",
@@ -310,16 +379,16 @@ async def handle_reward_trigger(
             "requested": requested_package,
         }
 
-    display_name, commands, cooldown = (
-        PACKAGE_SETTINGS[requested_package]
-    )
+    settings = PACKAGE_SETTINGS[requested_package]
 
-    remaining = (
-        await get_action_cooldown_remaining(
-            player_name,
-            requested_package,
-            cooldown,
-        )
+    display_name = settings["display_name"]
+    commands = settings["commands"]
+    cooldown = settings["cooldown"]
+
+    remaining = await get_action_cooldown_remaining(
+        player_name,
+        requested_package,
+        cooldown,
     )
 
     if remaining > 0:
@@ -339,6 +408,11 @@ async def handle_reward_trigger(
         }
 
     if not commands:
+        logger.warning(
+            "%s commands are not configured.",
+            requested_package,
+        )
+
         await announce(
             rcon_service,
             (
@@ -352,9 +426,7 @@ async def handle_reward_trigger(
             "reason": "no_commands_configured",
         }
 
-    safe_player = safe_text(
-        player_name
-    )
+    safe_player = safe_text(player_name)
 
     details: list[str] = []
     success = True
@@ -364,12 +436,15 @@ async def handle_reward_trigger(
             command = template.format(
                 player=safe_player
             )
-        except (KeyError, ValueError) as exc:
+
+        except (KeyError, ValueError, IndexError) as exc:
             success = False
 
-            details.append(
+            error_detail = (
                 f"Template error: {template} -> {exc}"
             )
+
+            details.append(error_detail)
 
             logger.exception(
                 "Invalid reward command template: %s",
@@ -377,10 +452,8 @@ async def handle_reward_trigger(
             )
             break
 
-        sent, response = (
-            await rcon_service.send_command(
-                command
-            )
+        sent, response = await rcon_service.send_command(
+            command
         )
 
         details.append(
@@ -389,13 +462,17 @@ async def handle_reward_trigger(
 
         if not sent:
             success = False
+
+            logger.warning(
+                "Reward command failed for %s: %s",
+                player_name,
+                response,
+            )
             break
 
         await asyncio.sleep(0.25)
 
-    detail = "\n".join(
-        details
-    )
+    detail = "\n".join(details)
 
     await store_vip_claim(
         member.id,
@@ -416,6 +493,7 @@ async def handle_reward_trigger(
                 f"{format_duration(cooldown)}."
             ),
         )
+
     else:
         await announce(
             rcon_service,
@@ -436,9 +514,19 @@ async def handle_reward_trigger(
             f"**Discord:** {member.mention}\n"
             f"**Owned tier:** `{owned_package}`\n"
             f"**Requested tier:** `{requested_package}`\n"
-            f"**Trigger:** `{phrase}`\n"
-            f"**Commands:** `{len(commands)}`"
+            f"**Trigger:** `{safe_text(phrase)}`\n"
+            f"**Commands:** `{len(commands)}`\n"
+            f"**Result:** `{'Success' if success else 'Failed'}`"
         ),
+        success,
+    )
+
+    logger.info(
+        "[REWARD RESULT] Player=%s Package=%s "
+        "Owned=%s Delivered=%s",
+        player_name,
+        requested_package,
+        owned_package,
         success,
     )
 
@@ -450,6 +538,10 @@ async def handle_reward_trigger(
     }
 
 
+# =========================================================
+# Outpost teleport handling
+# =========================================================
+
 async def handle_outpost_trigger(
     bot,
     rcon_service,
@@ -457,9 +549,7 @@ async def handle_outpost_trigger(
     phrase: str,
     user_id: int | None,
 ) -> dict:
-    link = await get_link_by_gamertag(
-        player_name
-    )
+    link = await get_link_by_gamertag(player_name)
 
     if not link:
         await announce(
@@ -507,12 +597,10 @@ async def handle_outpost_trigger(
             "reason": "outpost_not_configured",
         }
 
-    remaining = (
-        await get_action_cooldown_remaining(
-            player_name,
-            "outpost",
-            OUTPOST_COOLDOWN_SECONDS,
-        )
+    remaining = await get_action_cooldown_remaining(
+        player_name,
+        "outpost",
+        OUTPOST_COOLDOWN_SECONDS,
     )
 
     if remaining > 0:
@@ -532,9 +620,8 @@ async def handle_outpost_trigger(
         }
 
     try:
-        rust_user_id = int(
-            user_id
-        )
+        rust_user_id = int(user_id)
+
     except (TypeError, ValueError):
         await announce(
             rcon_service,
@@ -557,16 +644,13 @@ async def handle_outpost_trigger(
         f'"{rust_user_id}"'
     )
 
-    sent, response = (
-        await rcon_service.send_command(
-            command
-        )
+    sent, response = await rcon_service.send_command(
+        command
     )
 
     try:
-        discord_id = int(
-            link["discord_id"]
-        )
+        discord_id = int(link["discord_id"])
+
     except (KeyError, TypeError, ValueError):
         discord_id = 0
 
@@ -587,6 +671,7 @@ async def handle_outpost_trigger(
                 f"teleported to Outpost."
             ),
         )
+
     else:
         await announce(
             rcon_service,
@@ -607,10 +692,19 @@ async def handle_outpost_trigger(
             f"**Rust user ID:** `{rust_user_id}`\n"
             f"**Coordinates:** "
             f"`{OUTPOST_X}, {OUTPOST_Y}, {OUTPOST_Z}`\n"
-            f"**Trigger:** `{phrase}`\n"
-            f"**RCON response:** `{response}`"
+            f"**Trigger:** `{safe_text(phrase)}`\n"
+            f"**RCON response:** `{safe_text(response)}`"
         ),
         sent,
+    )
+
+    logger.info(
+        "[OUTPOST RESULT] Player=%s UserId=%s "
+        "Delivered=%s Response=%s",
+        player_name,
+        rust_user_id,
+        sent,
+        response,
     )
 
     return {
