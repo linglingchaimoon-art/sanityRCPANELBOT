@@ -8,15 +8,38 @@ load_dotenv(override=True)
 
 def env_int(name: str, default: int = 0) -> int:
     value = os.getenv(name, str(default)).strip()
+
     try:
         return int(value)
     except ValueError as exc:
-        raise RuntimeError(f"{name} must be an integer, got {value!r}") from exc
+        raise RuntimeError(
+            f"{name} must be an integer, got {value!r}"
+        ) from exc
 
 
 def env_bool(name: str, default: bool = False) -> bool:
     fallback = "true" if default else "false"
-    return os.getenv(name, fallback).strip().lower() in {"1", "true", "yes", "on"}
+
+    return os.getenv(
+        name,
+        fallback,
+    ).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def env_float(name: str, default: float = 0.0) -> float:
+    value = os.getenv(name, str(default)).strip()
+
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"{name} must be a number, got {value!r}"
+        ) from exc
 
 
 def env_id_set(name: str) -> set[int]:
@@ -31,9 +54,22 @@ def env_id_set(name: str) -> set[int]:
         try:
             result.add(int(part))
         except ValueError as exc:
-            raise RuntimeError(f"{name} contains invalid ID {part!r}") from exc
+            raise RuntimeError(
+                f"{name} contains invalid ID {part!r}"
+            ) from exc
 
     return result
+
+
+def env_string_set(
+    name: str,
+    default: str = "",
+) -> set[str]:
+    return {
+        part.strip()
+        for part in os.getenv(name, default).split(",")
+        if part.strip()
+    }
 
 
 def env_commands(name: str) -> list[str]:
@@ -46,50 +82,291 @@ def env_commands(name: str) -> list[str]:
         value = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise RuntimeError(
-            f"{name} contains invalid JSON.\nCurrent value: {raw!r}"
+            f"{name} contains invalid JSON.\n"
+            f"Current value: {raw!r}"
         ) from exc
 
-    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        raise RuntimeError(f"{name} must be a JSON list of strings")
+    if (
+        not isinstance(value, list)
+        or not all(
+            isinstance(item, str)
+            for item in value
+        )
+    ):
+        raise RuntimeError(
+            f"{name} must be a JSON list of strings"
+        )
 
     return value
 
 
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "").strip()
+# =========================================================
+# Discord
+# =========================================================
+
+DISCORD_TOKEN = os.getenv(
+    "DISCORD_TOKEN",
+    "",
+).strip()
+
 GUILD_ID = env_int("GUILD_ID")
 
+
+# =========================================================
+# VIP roles
+# =========================================================
+
 VIP_ROLE_ID = env_int("VIP_ROLE_ID")
-DIAMOND_VIP_ROLE_ID = env_int("DIAMOND_VIP_ROLE_ID")
-ULTIMATE_VIP_ROLE_ID = env_int("ULTIMATE_VIP_ROLE_ID")
 
-STAFF_ROLE_IDS = env_id_set("STAFF_ROLE_IDS")
-HR_ROLE_IDS = env_id_set("HR_ROLE_IDS")
+DIAMOND_VIP_ROLE_ID = env_int(
+    "DIAMOND_VIP_ROLE_ID"
+)
 
-LINKED_NICKNAME_PREFIX = os.getenv("LINKED_NICKNAME_PREFIX", "🔗").strip()
+ULTIMATE_VIP_ROLE_ID = env_int(
+    "ULTIMATE_VIP_ROLE_ID"
+)
 
-BOOSTER_CUSTOM_ROLE_ID = env_int("BOOSTER_CUSTOM_ROLE_ID")
-BOOSTER_NICKNAME_PREFIX = os.getenv("BOOSTER_NICKNAME_PREFIX", "💎").strip()
 
-LOA_ROLE_ID = env_int("LOA_ROLE_ID")
-LOA_REVIEW_CHANNEL_ID = env_int("LOA_REVIEW_CHANNEL_ID")
-LOA_LOG_CHANNEL_ID = env_int("LOA_LOG_CHANNEL_ID")
+# =========================================================
+# Staff roles
+# =========================================================
 
-RCON_HOST = os.getenv("RCON_HOST", "127.0.0.1").strip()
-RCON_PORT = env_int("RCON_PORT", 28016)
-RCON_PASSWORD = os.getenv("RCON_PASSWORD", "test")
-RCON_USE_SSL = env_bool("RCON_USE_SSL")
-RCON_MOCK_COMMANDS = env_bool("RCON_MOCK_COMMANDS", True)
-DEBUG_RCON_MESSAGES = env_bool("DEBUG_RCON_MESSAGES", True)
+STAFF_ROLE_IDS = env_id_set(
+    "STAFF_ROLE_IDS"
+)
 
-REWARD_COOLDOWN_SECONDS = env_int("REWARD_COOLDOWN_SECONDS", 86400)
-CLAIM_LOG_CHANNEL_ID = env_int("CLAIM_LOG_CHANNEL_ID")
+HR_ROLE_IDS = env_id_set(
+    "HR_ROLE_IDS"
+)
 
-VIP_COMMANDS = env_commands("VIP_COMMANDS_JSON")
-DIAMOND_COMMANDS = env_commands("DIAMOND_COMMANDS_JSON")
-ULTIMATE_COMMANDS = env_commands("ULTIMATE_COMMANDS_JSON")
 
-DATABASE_PATH = os.getenv("DATABASE_PATH", "data/sanity2x.db").strip()
+# =========================================================
+# Account linking
+# =========================================================
 
+LINKED_NICKNAME_PREFIX = os.getenv(
+    "LINKED_NICKNAME_PREFIX",
+    "🔗",
+).strip()
+
+
+# =========================================================
+# Booster settings
+# =========================================================
+
+BOOSTER_CUSTOM_ROLE_ID = env_int(
+    "BOOSTER_CUSTOM_ROLE_ID"
+)
+
+BOOSTER_NICKNAME_PREFIX = os.getenv(
+    "BOOSTER_NICKNAME_PREFIX",
+    "💎",
+).strip()
+
+
+# =========================================================
+# LOA settings
+# =========================================================
+
+LOA_ROLE_ID = env_int(
+    "LOA_ROLE_ID"
+)
+
+LOA_REVIEW_CHANNEL_ID = env_int(
+    "LOA_REVIEW_CHANNEL_ID"
+)
+
+LOA_LOG_CHANNEL_ID = env_int(
+    "LOA_LOG_CHANNEL_ID"
+)
+
+
+# =========================================================
+# RCON settings
+# =========================================================
+
+RCON_HOST = os.getenv(
+    "RCON_HOST",
+    "127.0.0.1",
+).strip()
+
+RCON_PORT = env_int(
+    "RCON_PORT",
+    28016,
+)
+
+RCON_PASSWORD = os.getenv(
+    "RCON_PASSWORD",
+    "test",
+).strip()
+
+RCON_USE_SSL = env_bool(
+    "RCON_USE_SSL",
+    False,
+)
+
+RCON_MOCK_COMMANDS = env_bool(
+    "RCON_MOCK_COMMANDS",
+    True,
+)
+
+DEBUG_RCON_MESSAGES = env_bool(
+    "DEBUG_RCON_MESSAGES",
+    True,
+)
+
+
+# =========================================================
+# In-game messages
+# =========================================================
+
+INGAME_MESSAGES_ENABLED = env_bool(
+    "INGAME_MESSAGES_ENABLED",
+    True,
+)
+
+SERVER_MESSAGE_PREFIX = os.getenv(
+    "SERVER_MESSAGE_PREFIX",
+    "[Sanity2X]",
+).strip()
+
+
+# =========================================================
+# Reward cooldowns
+# =========================================================
+
+VIP_COOLDOWN_SECONDS = env_int(
+    "VIP_COOLDOWN_SECONDS",
+    86400,
+)
+
+DIAMOND_COOLDOWN_SECONDS = env_int(
+    "DIAMOND_COOLDOWN_SECONDS",
+    86400,
+)
+
+ULTIMATE_COOLDOWN_SECONDS = env_int(
+    "ULTIMATE_COOLDOWN_SECONDS",
+    86400,
+)
+
+
+# =========================================================
+# Outpost teleport
+# =========================================================
+
+OUTPOST_X = env_float(
+    "OUTPOST_X",
+    0.0,
+)
+
+OUTPOST_Y = env_float(
+    "OUTPOST_Y",
+    0.0,
+)
+
+OUTPOST_Z = env_float(
+    "OUTPOST_Z",
+    0.0,
+)
+
+OUTPOST_COOLDOWN_SECONDS = env_int(
+    "OUTPOST_COOLDOWN_SECONDS",
+    1800,
+)
+
+OUTPOST_CONFIRM_SECONDS = env_int(
+    "OUTPOST_CONFIRM_SECONDS",
+    15,
+)
+
+
+# =========================================================
+# Quick-chat triggers
+# =========================================================
+
+VIP_TRIGGERS = env_string_set(
+    "VIP_TRIGGERS",
+    (
+        "I Need Wood,"
+        "d11_quick_chat_i_need_phrase_format wood"
+    ),
+)
+
+DIAMOND_TRIGGERS = env_string_set(
+    "DIAMOND_TRIGGERS",
+    (
+        "I Need Pickaxe,"
+        "d11_quick_chat_i_need_phrase_format pickaxe"
+    ),
+)
+
+ULTIMATE_TRIGGERS = env_string_set(
+    "ULTIMATE_TRIGGERS",
+    (
+        "I Need HQM,"
+        "d11_quick_chat_i_need_phrase_format hqm"
+    ),
+)
+
+OUTPOST_TRIGGERS = env_string_set(
+    "OUTPOST_TRIGGERS",
+    (
+        "Let's Go,"
+        "Lets Go,"
+        "d11_quick_chat_lets_go_phrase_format"
+    ),
+)
+
+OUTPOST_CONFIRM_TRIGGERS = env_string_set(
+    "OUTPOST_CONFIRM_TRIGGERS",
+    (
+        "Yes,"
+        "d11_quick_chat_yes_phrase_format yes,"
+        "d11_quick_chat_yes_phrase_format"
+    ),
+)
+
+
+# =========================================================
+# Reward commands
+# =========================================================
+
+VIP_COMMANDS = env_commands(
+    "VIP_COMMANDS_JSON"
+)
+
+DIAMOND_COMMANDS = env_commands(
+    "DIAMOND_COMMANDS_JSON"
+)
+
+ULTIMATE_COMMANDS = env_commands(
+    "ULTIMATE_COMMANDS_JSON"
+)
+
+
+# =========================================================
+# Logging
+# =========================================================
+
+CLAIM_LOG_CHANNEL_ID = env_int(
+    "CLAIM_LOG_CHANNEL_ID"
+)
+
+
+# =========================================================
+# Database
+# =========================================================
+
+DATABASE_PATH = os.getenv(
+    "DATABASE_PATH",
+    "data/sanity2x.db",
+).strip()
+
+
+# =========================================================
+# Validation
+# =========================================================
 
 def validate_config() -> None:
     missing: list[str] = []
@@ -103,10 +380,40 @@ def validate_config() -> None:
     if not RCON_MOCK_COMMANDS:
         if not RCON_HOST:
             missing.append("RCON_HOST")
+
         if not RCON_PORT:
             missing.append("RCON_PORT")
+
         if not RCON_PASSWORD:
             missing.append("RCON_PASSWORD")
 
+    if OUTPOST_COOLDOWN_SECONDS < 0:
+        raise RuntimeError(
+            "OUTPOST_COOLDOWN_SECONDS cannot be negative"
+        )
+
+    if OUTPOST_CONFIRM_SECONDS <= 0:
+        raise RuntimeError(
+            "OUTPOST_CONFIRM_SECONDS must be greater than 0"
+        )
+
+    if VIP_COOLDOWN_SECONDS < 0:
+        raise RuntimeError(
+            "VIP_COOLDOWN_SECONDS cannot be negative"
+        )
+
+    if DIAMOND_COOLDOWN_SECONDS < 0:
+        raise RuntimeError(
+            "DIAMOND_COOLDOWN_SECONDS cannot be negative"
+        )
+
+    if ULTIMATE_COOLDOWN_SECONDS < 0:
+        raise RuntimeError(
+            "ULTIMATE_COOLDOWN_SECONDS cannot be negative"
+        )
+
     if missing:
-        raise RuntimeError("Missing required variables: " + ", ".join(missing))
+        raise RuntimeError(
+            "Missing required variables: "
+            + ", ".join(missing)
+        )
