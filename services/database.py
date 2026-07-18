@@ -1,5 +1,5 @@
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+import os
+from datetime import datetime, timezone
 
 import aiosqlite
 
@@ -11,142 +11,160 @@ def utcnow_iso() -> str:
 
 
 async def init_database() -> None:
-    Path(DATABASE_PATH).parent.mkdir(parents=True, exist_ok=True)
+    directory = os.path.dirname(DATABASE_PATH)
 
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.executescript(
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+
+    async with aiosqlite.connect(DATABASE_PATH) as database:
+        await database.execute(
             """
             CREATE TABLE IF NOT EXISTS links (
                 discord_id INTEGER PRIMARY KEY,
-                discord_name TEXT NOT NULL,
-                platform TEXT NOT NULL,
-                gamertag TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                gamertag TEXT NOT NULL UNIQUE COLLATE NOCASE,
                 linked_at TEXT NOT NULL
-            );
+            )
+            """
+        )
 
+        await database.execute(
+            """
             CREATE TABLE IF NOT EXISTS vip_claims (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 discord_id INTEGER NOT NULL,
-                gamertag TEXT NOT NULL,
+                gamertag TEXT NOT NULL COLLATE NOCASE,
                 package TEXT NOT NULL,
                 trigger_phrase TEXT NOT NULL,
                 success INTEGER NOT NULL,
                 detail TEXT,
                 claimed_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS loa_requests (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                discord_id INTEGER NOT NULL,
-                discord_name TEXT NOT NULL,
-                reason TEXT NOT NULL,
-                start_date TEXT NOT NULL,
-                end_date TEXT NOT NULL,
-                extra_information TEXT,
-                status TEXT NOT NULL,
-                review_channel_id INTEGER,
-                review_message_id INTEGER,
-                reviewed_by_id INTEGER,
-                reviewed_by_name TEXT,
-                review_reason TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_vip_claims_player_time
-            ON vip_claims(gamertag, claimed_at);
-
-            CREATE INDEX IF NOT EXISTS idx_loa_user_status
-            ON loa_requests(discord_id, status);
+            )
             """
         )
 
-        await db.commit()
+        await database.execute(
+            """
+            CREATE INDEX IF NOT EXISTS
+            idx_vip_claims_gamertag_package
+            ON vip_claims(gamertag, package, claimed_at)
+            """
+        )
+
+        await database.execute(
+            """
+            CREATE TABLE IF NOT EXISTS loa_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                discord_id INTEGER NOT NULL,
+                reason TEXT NOT NULL,
+                start_date TEXT NOT NULL,
+                end_date TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                review_message_id INTEGER,
+                reviewed_by INTEGER,
+                reviewed_at TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
+        await database.commit()
 
 
 async def save_link(
     discord_id: int,
-    discord_name: str,
-    platform: str,
     gamertag: str,
 ) -> None:
-    gamertag = " ".join(gamertag.strip().split())
+    clean_gamertag = " ".join(
+        gamertag.strip().split()
+    )
 
-    if not gamertag:
-        raise ValueError("Enter a valid gamertag.")
-
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        cursor = await db.execute(
-            "SELECT gamertag FROM links WHERE discord_id = ?",
-            (discord_id,),
-        )
-        existing_user = await cursor.fetchone()
-
-        if existing_user:
-            raise ValueError(f"You are already linked to {existing_user[0]}.")
-
-        cursor = await db.execute(
-            "SELECT discord_id FROM links WHERE gamertag = ? COLLATE NOCASE",
-            (gamertag,),
-        )
-        existing_gamertag = await cursor.fetchone()
-
-        if existing_gamertag:
-            raise ValueError("That gamertag is already linked to another Discord account.")
-
-        await db.execute(
+    async with aiosqlite.connect(DATABASE_PATH) as database:
+        await database.execute(
             """
-            INSERT INTO links (
-                discord_id,
-                discord_name,
-                platform,
-                gamertag,
-                linked_at
-            )
-            VALUES (?, ?, ?, ?, ?)
+            DELETE FROM links
+            WHERE discord_id = ?
+               OR gamertag = ? COLLATE NOCASE
             """,
             (
                 discord_id,
-                discord_name,
-                platform,
+                clean_gamertag,
+            ),
+        )
+
+        await database.execute(
+            """
+            INSERT INTO links (
+                discord_id,
                 gamertag,
+                linked_at
+            )
+            VALUES (?, ?, ?)
+            """,
+            (
+                discord_id,
+                clean_gamertag,
                 utcnow_iso(),
             ),
         )
 
-        await db.commit()
+        await database.commit()
 
 
-async def get_link_by_discord(discord_id: int):
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
-            "SELECT * FROM links WHERE discord_id = ?",
+async def get_link_by_discord(
+    discord_id: int,
+) -> dict | None:
+    async with aiosqlite.connect(DATABASE_PATH) as database:
+        database.row_factory = aiosqlite.Row
+
+        cursor = await database.execute(
+            """
+            SELECT discord_id, gamertag, linked_at
+            FROM links
+            WHERE discord_id = ?
+            """,
             (discord_id,),
         )
-        return await cursor.fetchone()
+
+        row = await cursor.fetchone()
+
+        return dict(row) if row else None
 
 
-async def get_link_by_gamertag(gamertag: str):
-    gamertag = " ".join(gamertag.strip().split())
+async def get_link_by_gamertag(
+    gamertag: str,
+) -> dict | None:
+    async with aiosqlite.connect(DATABASE_PATH) as database:
+        database.row_factory = aiosqlite.Row
 
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
-            "SELECT * FROM links WHERE gamertag = ? COLLATE NOCASE",
-            (gamertag,),
+        cursor = await database.execute(
+            """
+            SELECT discord_id, gamertag, linked_at
+            FROM links
+            WHERE gamertag = ? COLLATE NOCASE
+            """,
+            (gamertag.strip(),),
         )
-        return await cursor.fetchone()
+
+        row = await cursor.fetchone()
+
+        return dict(row) if row else None
 
 
-async def delete_link(discord_id: int) -> bool:
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        cursor = await db.execute(
-            "DELETE FROM links WHERE discord_id = ?",
+async def delete_link(
+    discord_id: int,
+) -> int:
+    async with aiosqlite.connect(DATABASE_PATH) as database:
+        cursor = await database.execute(
+            """
+            DELETE FROM links
+            WHERE discord_id = ?
+            """,
             (discord_id,),
         )
-        await db.commit()
-        return cursor.rowcount > 0
+
+        await database.commit()
+
+        return cursor.rowcount
 
 
 async def get_action_cooldown_remaining(
@@ -154,43 +172,78 @@ async def get_action_cooldown_remaining(
     action: str,
     cooldown_seconds: int,
 ) -> int:
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        cursor = await db.execute(
+    if cooldown_seconds <= 0:
+        return 0
+
+    async with aiosqlite.connect(DATABASE_PATH) as database:
+        cursor = await database.execute(
             """
             SELECT claimed_at
             FROM vip_claims
             WHERE gamertag = ? COLLATE NOCASE
               AND package = ?
               AND success = 1
-            ORDER BY claimed_at DESC
+            ORDER BY id DESC
             LIMIT 1
             """,
-            (gamertag, action),
+            (
+                gamertag.strip(),
+                action,
+            ),
         )
+
         row = await cursor.fetchone()
 
     if not row:
         return 0
 
-    last_claim = datetime.fromisoformat(row[0])
-    available_at = last_claim + timedelta(seconds=cooldown_seconds)
-    remaining = int((available_at - datetime.now(timezone.utc)).total_seconds())
+    try:
+        claimed_at = datetime.fromisoformat(row[0])
+
+        if claimed_at.tzinfo is None:
+            claimed_at = claimed_at.replace(
+                tzinfo=timezone.utc
+            )
+    except (TypeError, ValueError):
+        return 0
+
+    elapsed = (
+        datetime.now(timezone.utc) - claimed_at
+    ).total_seconds()
+
+    remaining = cooldown_seconds - int(elapsed)
+
     return max(0, remaining)
 
 
-async def reset_action_cooldown(gamertag: str, action: str | None = None) -> int:
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        if action:
-            cursor = await db.execute(
-                "DELETE FROM vip_claims WHERE gamertag = ? COLLATE NOCASE AND package = ?",
-                (gamertag, action),
+async def reset_action_cooldown(
+    gamertag: str,
+    action: str | None = None,
+) -> int:
+    async with aiosqlite.connect(DATABASE_PATH) as database:
+        if action is None:
+            cursor = await database.execute(
+                """
+                DELETE FROM vip_claims
+                WHERE gamertag = ? COLLATE NOCASE
+                """,
+                (gamertag.strip(),),
             )
         else:
-            cursor = await db.execute(
-                "DELETE FROM vip_claims WHERE gamertag = ? COLLATE NOCASE",
-                (gamertag,),
+            cursor = await database.execute(
+                """
+                DELETE FROM vip_claims
+                WHERE gamertag = ? COLLATE NOCASE
+                  AND package = ?
+                """,
+                (
+                    gamertag.strip(),
+                    action,
+                ),
             )
-        await db.commit()
+
+        await database.commit()
+
         return cursor.rowcount
 
 
@@ -202,8 +255,8 @@ async def store_vip_claim(
     success: bool,
     detail: str,
 ) -> None:
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute(
+    async with aiosqlite.connect(DATABASE_PATH) as database:
+        await database.execute(
             """
             INSERT INTO vip_claims (
                 discord_id,
@@ -218,149 +271,152 @@ async def store_vip_claim(
             """,
             (
                 discord_id,
-                gamertag,
+                gamertag.strip(),
                 package,
                 trigger_phrase,
-                int(success),
+                1 if success else 0,
                 detail,
                 utcnow_iso(),
             ),
         )
-        await db.commit()
+
+        await database.commit()
 
 
 async def create_loa_request(
     discord_id: int,
-    discord_name: str,
     reason: str,
     start_date: str,
     end_date: str,
-    extra_information: str,
 ) -> int:
-    now = utcnow_iso()
-
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        cursor = await db.execute(
+    async with aiosqlite.connect(DATABASE_PATH) as database:
+        cursor = await database.execute(
             """
             INSERT INTO loa_requests (
                 discord_id,
-                discord_name,
                 reason,
                 start_date,
                 end_date,
-                extra_information,
                 status,
-                review_channel_id,
-                review_message_id,
-                reviewed_by_id,
-                reviewed_by_name,
-                review_reason,
-                created_at,
-                updated_at
+                created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, 'pending',
-                    NULL, NULL, NULL, NULL, NULL, ?, ?)
+            VALUES (?, ?, ?, ?, 'pending', ?)
             """,
             (
                 discord_id,
-                discord_name,
                 reason,
                 start_date,
                 end_date,
-                extra_information,
-                now,
-                now,
+                utcnow_iso(),
             ),
         )
-        await db.commit()
-        return int(cursor.lastrowid)
+
+        await database.commit()
+
+        return cursor.lastrowid
 
 
-async def get_loa_request(request_id: int):
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
-            "SELECT * FROM loa_requests WHERE id = ?",
+async def get_loa_request(
+    request_id: int,
+) -> dict | None:
+    async with aiosqlite.connect(DATABASE_PATH) as database:
+        database.row_factory = aiosqlite.Row
+
+        cursor = await database.execute(
+            """
+            SELECT *
+            FROM loa_requests
+            WHERE id = ?
+            """,
             (request_id,),
         )
-        return await cursor.fetchone()
+
+        row = await cursor.fetchone()
+
+        return dict(row) if row else None
 
 
-async def get_active_loa_request(discord_id: int):
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
+async def get_active_loa_request(
+    discord_id: int,
+) -> dict | None:
+    async with aiosqlite.connect(DATABASE_PATH) as database:
+        database.row_factory = aiosqlite.Row
+
+        cursor = await database.execute(
             """
             SELECT *
             FROM loa_requests
             WHERE discord_id = ?
               AND status IN ('pending', 'approved')
-            ORDER BY created_at DESC
+            ORDER BY id DESC
             LIMIT 1
             """,
             (discord_id,),
         )
-        return await cursor.fetchone()
+
+        row = await cursor.fetchone()
+
+        return dict(row) if row else None
 
 
-async def get_pending_loa_requests():
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
-            "SELECT * FROM loa_requests WHERE status = 'pending'"
+async def get_pending_loa_requests() -> list[dict]:
+    async with aiosqlite.connect(DATABASE_PATH) as database:
+        database.row_factory = aiosqlite.Row
+
+        cursor = await database.execute(
+            """
+            SELECT *
+            FROM loa_requests
+            WHERE status = 'pending'
+            ORDER BY id ASC
+            """
         )
-        return await cursor.fetchall()
+
+        rows = await cursor.fetchall()
+
+        return [dict(row) for row in rows]
 
 
 async def update_loa_request_message(
     request_id: int,
-    review_message_id: int,
-    review_channel_id: int,
+    message_id: int,
 ) -> None:
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute(
+    async with aiosqlite.connect(DATABASE_PATH) as database:
+        await database.execute(
             """
             UPDATE loa_requests
-            SET review_message_id = ?,
-                review_channel_id = ?,
-                updated_at = ?
+            SET review_message_id = ?
             WHERE id = ?
             """,
             (
-                review_message_id,
-                review_channel_id,
-                utcnow_iso(),
+                message_id,
                 request_id,
             ),
         )
-        await db.commit()
+
+        await database.commit()
 
 
 async def update_loa_status(
     request_id: int,
     status: str,
-    reviewed_by_id: int,
-    reviewed_by_name: str,
-    review_reason: str,
+    reviewed_by: int,
 ) -> None:
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute(
+    async with aiosqlite.connect(DATABASE_PATH) as database:
+        await database.execute(
             """
             UPDATE loa_requests
             SET status = ?,
-                reviewed_by_id = ?,
-                reviewed_by_name = ?,
-                review_reason = ?,
-                updated_at = ?
+                reviewed_by = ?,
+                reviewed_at = ?
             WHERE id = ?
             """,
             (
                 status,
-                reviewed_by_id,
-                reviewed_by_name,
-                review_reason,
+                reviewed_by,
                 utcnow_iso(),
                 request_id,
             ),
         )
-        await db.commit()
+
+        await database.commit()

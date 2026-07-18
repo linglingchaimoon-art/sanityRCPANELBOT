@@ -1,4 +1,3 @@
-import asyncio
 import logging
 
 import discord
@@ -8,12 +7,11 @@ from config import DISCORD_TOKEN, GUILD_ID, validate_config
 from services.database import init_database
 from services.rcon import RconService
 
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
-
-logger = logging.getLogger("sanity2x.main")
 
 
 class Sanity2XBot(commands.Bot):
@@ -41,36 +39,48 @@ class Sanity2XBot(commands.Bot):
         ]
 
         for extension in extensions:
-            await self.load_extension(extension)
-            logger.info("Loaded extension: %s", extension)
+            try:
+                await self.load_extension(extension)
+                logging.info("Loaded extension: %s", extension)
+            except Exception:
+                logging.exception(
+                    "Failed to load extension: %s",
+                    extension,
+                )
+                raise
 
-        guild = discord.Object(id=GUILD_ID)
-        self.tree.copy_global_to(guild=guild)
-        synced = await self.tree.sync(guild=guild)
+        guild = discord.Object(id=self.guild_id)
 
-        logger.info("Synced %s slash commands", len(synced))
+        try:
+            synced = await self.tree.sync(guild=guild)
+            logging.info(
+                "Synced %s guild slash command(s).",
+                len(synced),
+            )
+        except Exception:
+            logging.exception("Failed to sync slash commands.")
+            raise
 
         self.rcon_service.start()
+
+    async def on_ready(self) -> None:
+        logging.info(
+            "Logged in as %s (%s)",
+            self.user,
+            self.user.id if self.user else "unknown",
+        )
 
     async def close(self) -> None:
         await self.rcon_service.stop()
         await super().close()
 
 
-bot = Sanity2XBot()
-
-
-@bot.event
-async def on_ready() -> None:
-    logger.info("Logged in as %s", bot.user)
-
-
-async def main() -> None:
+def main() -> None:
     validate_config()
 
-    async with bot:
-        await bot.start(DISCORD_TOKEN)
+    bot = Sanity2XBot()
+    bot.run(DISCORD_TOKEN)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

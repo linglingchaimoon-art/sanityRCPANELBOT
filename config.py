@@ -20,10 +20,7 @@ def env_int(name: str, default: int = 0) -> int:
 def env_bool(name: str, default: bool = False) -> bool:
     fallback = "true" if default else "false"
 
-    return os.getenv(
-        name,
-        fallback,
-    ).strip().lower() in {
+    return os.getenv(name, fallback).strip().lower() in {
         "1",
         "true",
         "yes",
@@ -82,7 +79,7 @@ def env_commands(name: str) -> list[str]:
         value = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise RuntimeError(
-            f"{name} contains invalid JSON.\n"
+            f"{name} contains invalid JSON. "
             f"Current value: {raw!r}"
         ) from exc
 
@@ -97,53 +94,26 @@ def env_commands(name: str) -> list[str]:
     return value
 
 
-# =========================================================
 # Discord
-# =========================================================
 
-DISCORD_TOKEN = os.getenv(
-    "DISCORD_TOKEN",
-    "",
-).strip()
-
-GUILD_ID = env_int(
-    "GUILD_ID"
-)
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "").strip()
+GUILD_ID = env_int("GUILD_ID")
 
 
-# =========================================================
 # VIP roles
-# =========================================================
 
-VIP_ROLE_ID = env_int(
-    "VIP_ROLE_ID"
-)
-
-DIAMOND_VIP_ROLE_ID = env_int(
-    "DIAMOND_VIP_ROLE_ID"
-)
-
-ULTIMATE_VIP_ROLE_ID = env_int(
-    "ULTIMATE_VIP_ROLE_ID"
-)
+VIP_ROLE_ID = env_int("VIP_ROLE_ID")
+DIAMOND_VIP_ROLE_ID = env_int("DIAMOND_VIP_ROLE_ID")
+ULTIMATE_VIP_ROLE_ID = env_int("ULTIMATE_VIP_ROLE_ID")
 
 
-# =========================================================
 # Staff roles
-# =========================================================
 
-STAFF_ROLE_IDS = env_id_set(
-    "STAFF_ROLE_IDS"
-)
-
-HR_ROLE_IDS = env_id_set(
-    "HR_ROLE_IDS"
-)
+STAFF_ROLE_IDS = env_id_set("STAFF_ROLE_IDS")
+HR_ROLE_IDS = env_id_set("HR_ROLE_IDS")
 
 
-# =========================================================
-# Account linking
-# =========================================================
+# Linking
 
 LINKED_NICKNAME_PREFIX = os.getenv(
     "LINKED_NICKNAME_PREFIX",
@@ -151,9 +121,7 @@ LINKED_NICKNAME_PREFIX = os.getenv(
 ).strip()
 
 
-# =========================================================
-# Booster settings
-# =========================================================
+# Booster
 
 BOOSTER_CUSTOM_ROLE_ID = env_int(
     "BOOSTER_CUSTOM_ROLE_ID"
@@ -165,26 +133,14 @@ BOOSTER_NICKNAME_PREFIX = os.getenv(
 ).strip()
 
 
-# =========================================================
-# LOA settings
-# =========================================================
+# LOA
 
-LOA_ROLE_ID = env_int(
-    "LOA_ROLE_ID"
-)
-
-LOA_REVIEW_CHANNEL_ID = env_int(
-    "LOA_REVIEW_CHANNEL_ID"
-)
-
-LOA_LOG_CHANNEL_ID = env_int(
-    "LOA_LOG_CHANNEL_ID"
-)
+LOA_ROLE_ID = env_int("LOA_ROLE_ID")
+LOA_REVIEW_CHANNEL_ID = env_int("LOA_REVIEW_CHANNEL_ID")
+LOA_LOG_CHANNEL_ID = env_int("LOA_LOG_CHANNEL_ID")
 
 
-# =========================================================
-# RCON settings
-# =========================================================
+# RCON
 
 RCON_HOST = os.getenv(
     "RCON_HOST",
@@ -217,9 +173,7 @@ DEBUG_RCON_MESSAGES = env_bool(
 )
 
 
-# =========================================================
 # In-game messages
-# =========================================================
 
 INGAME_MESSAGES_ENABLED = env_bool(
     "INGAME_MESSAGES_ENABLED",
@@ -232,9 +186,7 @@ SERVER_MESSAGE_PREFIX = os.getenv(
 ).strip()
 
 
-# =========================================================
 # Reward cooldowns
-# =========================================================
 
 VIP_COOLDOWN_SECONDS = env_int(
     "VIP_COOLDOWN_SECONDS",
@@ -252,24 +204,11 @@ ULTIMATE_COOLDOWN_SECONDS = env_int(
 )
 
 
-# =========================================================
-# Outpost teleport
-# =========================================================
+# Outpost
 
-OUTPOST_X = env_float(
-    "OUTPOST_X",
-    0.0,
-)
-
-OUTPOST_Y = env_float(
-    "OUTPOST_Y",
-    0.0,
-)
-
-OUTPOST_Z = env_float(
-    "OUTPOST_Z",
-    0.0,
-)
+OUTPOST_X = env_float("OUTPOST_X", 0.0)
+OUTPOST_Y = env_float("OUTPOST_Y", 0.0)
+OUTPOST_Z = env_float("OUTPOST_Z", 0.0)
 
 OUTPOST_COOLDOWN_SECONDS = env_int(
     "OUTPOST_COOLDOWN_SECONDS",
@@ -282,91 +221,55 @@ OUTPOST_CONFIRM_SECONDS = env_int(
 )
 
 
-# =========================================================
 # Quick-chat triggers
-# =========================================================
 
 VIP_TRIGGERS = env_string_set(
     "VIP_TRIGGERS",
-    (
-        "I Need Wood,"
-        "d11_quick_chat_i_need_phrase_format wood"
-    ),
+    "d11_quick_chat_i_need_phrase_format wood",
 )
 
 DIAMOND_TRIGGERS = env_string_set(
     "DIAMOND_TRIGGERS",
-    (
-        "I Have Pickaxe,"
-        "d11_quick_chat_i_have_phrase_format pickaxe"
-    ),
+    "d11_quick_chat_i_have_phrase_format pickaxe",
 )
 
 ULTIMATE_TRIGGERS = env_string_set(
     "ULTIMATE_TRIGGERS",
-    (
-        "I Need HQM,"
-        "d11_quick_chat_i_need_phrase_format metal.refined"
-    ),
+    "d11_quick_chat_i_need_phrase_format metal.refined",
 )
 
 OUTPOST_TRIGGERS = env_string_set(
     "OUTPOST_TRIGGERS",
-    (
-        "Let's Go,"
-        "Lets Go,"
-        "d11_quick_chat_orders_slot_5"
-    ),
+    "d11_quick_chat_orders_slot_5",
 )
 
 OUTPOST_CONFIRM_TRIGGERS = env_string_set(
     "OUTPOST_CONFIRM_TRIGGERS",
-    (
-        "Yes,"
-        "d11_quick_chat_responses_slot_0"
-    ),
+    "d11_quick_chat_responses_slot_0",
 )
 
 
-# =========================================================
 # Reward commands
-# =========================================================
 
-VIP_COMMANDS = env_commands(
-    "VIP_COMMANDS_JSON"
-)
-
-DIAMOND_COMMANDS = env_commands(
-    "DIAMOND_COMMANDS_JSON"
-)
-
-ULTIMATE_COMMANDS = env_commands(
-    "ULTIMATE_COMMANDS_JSON"
-)
+VIP_COMMANDS = env_commands("VIP_COMMANDS_JSON")
+DIAMOND_COMMANDS = env_commands("DIAMOND_COMMANDS_JSON")
+ULTIMATE_COMMANDS = env_commands("ULTIMATE_COMMANDS_JSON")
 
 
-# =========================================================
 # Logging
-# =========================================================
 
 CLAIM_LOG_CHANNEL_ID = env_int(
     "CLAIM_LOG_CHANNEL_ID"
 )
 
 
-# =========================================================
 # Database
-# =========================================================
 
 DATABASE_PATH = os.getenv(
     "DATABASE_PATH",
     "data/sanity2x.db",
 ).strip()
 
-
-# =========================================================
-# Validation
-# =========================================================
 
 def validate_config() -> None:
     missing: list[str] = []
@@ -387,25 +290,18 @@ def validate_config() -> None:
         if not RCON_PASSWORD:
             missing.append("RCON_PASSWORD")
 
-    if VIP_COOLDOWN_SECONDS < 0:
-        raise RuntimeError(
-            "VIP_COOLDOWN_SECONDS cannot be negative"
-        )
+    cooldown_values = {
+        "VIP_COOLDOWN_SECONDS": VIP_COOLDOWN_SECONDS,
+        "DIAMOND_COOLDOWN_SECONDS": DIAMOND_COOLDOWN_SECONDS,
+        "ULTIMATE_COOLDOWN_SECONDS": ULTIMATE_COOLDOWN_SECONDS,
+        "OUTPOST_COOLDOWN_SECONDS": OUTPOST_COOLDOWN_SECONDS,
+    }
 
-    if DIAMOND_COOLDOWN_SECONDS < 0:
-        raise RuntimeError(
-            "DIAMOND_COOLDOWN_SECONDS cannot be negative"
-        )
-
-    if ULTIMATE_COOLDOWN_SECONDS < 0:
-        raise RuntimeError(
-            "ULTIMATE_COOLDOWN_SECONDS cannot be negative"
-        )
-
-    if OUTPOST_COOLDOWN_SECONDS < 0:
-        raise RuntimeError(
-            "OUTPOST_COOLDOWN_SECONDS cannot be negative"
-        )
+    for name, value in cooldown_values.items():
+        if value < 0:
+            raise RuntimeError(
+                f"{name} cannot be negative"
+            )
 
     if OUTPOST_CONFIRM_SECONDS <= 0:
         raise RuntimeError(
