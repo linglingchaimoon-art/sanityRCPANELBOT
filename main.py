@@ -41,7 +41,12 @@ class Sanity2XBot(commands.Bot):
         for extension in extensions:
             try:
                 await self.load_extension(extension)
-                logging.info("Loaded extension: %s", extension)
+
+                logging.info(
+                    "Loaded extension: %s",
+                    extension,
+                )
+
             except Exception:
                 logging.exception(
                     "Failed to load extension: %s",
@@ -49,26 +54,61 @@ class Sanity2XBot(commands.Bot):
                 )
                 raise
 
-        guild = discord.Object(id=self.guild_id)
+        guild = discord.Object(
+            id=self.guild_id
+        )
+
+        # Copy global slash commands into your server.
+        self.tree.copy_global_to(
+            guild=guild
+        )
 
         try:
-            synced = await self.tree.sync(guild=guild)
-            logging.info(
-                "Synced %s guild slash command(s).",
-                len(synced),
+            synced = await self.tree.sync(
+                guild=guild
             )
+
+            logging.info(
+                "Synced %s slash command(s) to guild %s.",
+                len(synced),
+                self.guild_id,
+            )
+
+            for command in synced:
+                logging.info(
+                    "Synced slash command: /%s",
+                    command.name,
+                )
+
         except Exception:
-            logging.exception("Failed to sync slash commands.")
+            logging.exception(
+                "Failed to sync slash commands."
+            )
             raise
 
         self.rcon_service.start()
 
     async def on_ready(self) -> None:
+        if self.user is None:
+            return
+
         logging.info(
             "Logged in as %s (%s)",
             self.user,
-            self.user.id if self.user else "unknown",
+            self.user.id,
         )
+
+        logging.info(
+            "Bot is connected to %s server(s).",
+            len(self.guilds),
+        )
+
+        for guild in self.guilds:
+            logging.info(
+                "Connected server: %s (%s)",
+                guild.name,
+                guild.id,
+            )
 
     async def close(self) -> None:
         await self.rcon_service.stop()
