@@ -627,21 +627,34 @@ async def announce_shop_purchase(
     gamertag: str,
     item: Item,
 ) -> tuple[bool, str]:
-    """Send one clean public Rust chat message after a completed purchase."""
+    """Send a professional multi-line Rust Console RCON shop broadcast."""
     player = _clean_chat_text(gamertag)
     item_name = _clean_chat_text(item.name)
 
-    # Rust Console controls the actual chat colour. Keep the message short,
-    # clean and readable instead of sending several white lines.
-    message = (
-        f"[ SANITY MARKET ] {player} purchased {item_name} | "
-        "DELIVERY COMPLETE"
+    # Rust Console RCON does not support custom text colours in global chat.
+    # A short boxed layout with symbols is the most reliable way to make the
+    # purchase announcement stand out without unsupported colour tags.
+    messages = (
+        "━━━━━━━━━━ 🛒 SANITY MARKET ━━━━━━━━━━",
+        f"★ {player} purchased {item_name}",
+        "✓ DELIVERY COMPLETE • ENJOY YOUR PURCHASE!",
     )
 
-    success, response = await service.send_command(
-        f'global.say "{message}"'
-    )
-    return bool(success), str(response)
+    responses: list[str] = []
+
+    for message in messages:
+        success, response = await service.send_command(
+            f'global.say "{message}"'
+        )
+        responses.append(str(response))
+
+        if not success:
+            return False, " | ".join(responses)
+
+        # Small delay keeps the lines in the intended order in Rust chat.
+        await asyncio.sleep(0.20)
+
+    return True, " | ".join(responses)
 
 
 async def deliver_item(
