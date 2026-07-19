@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -10,12 +12,24 @@ from services.database import (
 
 
 class AdminCog(commands.Cog):
-    def __init__(self, bot):
+    """
+    Discord admin commands.
+
+    Every response is ephemeral, and this cog never sends
+    global.say messages to Rust chat.
+    """
+
+    def __init__(
+        self,
+        bot,
+    ):
         self.bot = bot
 
     @app_commands.command(
         name="botstatus",
-        description="Administrator: view bot and RCON status.",
+        description=(
+            "Administrator: view bot and RCON status."
+        ),
     )
     @app_commands.default_permissions(
         administrator=True
@@ -25,24 +39,17 @@ class AdminCog(commands.Cog):
         self,
         interaction: discord.Interaction,
     ) -> None:
-        rcon_connected = (
-            self.bot.rcon_service.websocket is not None
+        rcon_connected = bool(
+            getattr(
+                self.bot.rcon_service,
+                "websocket",
+                None,
+            )
         )
-
-        if RCON_MOCK_COMMANDS:
-            rcon_status = "🧪 Mock mode"
-        elif rcon_connected:
-            rcon_status = "✅ Connected"
-        else:
-            rcon_status = "❌ Disconnected"
 
         embed = discord.Embed(
             title="🛠️ Sanity2X Bot Status",
-            color=(
-                discord.Color.green()
-                if rcon_connected or RCON_MOCK_COMMANDS
-                else discord.Color.red()
-            ),
+            color=discord.Color.green(),
         )
 
         embed.add_field(
@@ -53,8 +60,25 @@ class AdminCog(commands.Cog):
 
         embed.add_field(
             name="RCON",
-            value=rcon_status,
+            value=(
+                "🧪 Mock mode"
+                if RCON_MOCK_COMMANDS
+                else (
+                    "✅ Connected"
+                    if rcon_connected
+                    else "❌ Disconnected"
+                )
+            ),
             inline=True,
+        )
+
+        embed.add_field(
+            name="Privacy",
+            value=(
+                "🔒 Admin actions are hidden "
+                "from public Rust chat."
+            ),
+            inline=False,
         )
 
         await interaction.response.send_message(
@@ -116,9 +140,10 @@ class AdminCog(commands.Cog):
                 "❌ That member is not linked.",
                 ephemeral=True,
             )
+
             return
 
-        selected_action = (
+        selected = (
             None
             if action.value == "all"
             else action.value
@@ -126,14 +151,17 @@ class AdminCog(commands.Cog):
 
         deleted = await reset_action_cooldown(
             link["gamertag"],
-            selected_action,
+            selected,
         )
 
         await interaction.response.send_message(
             (
                 f"✅ Reset **{action.name}** for "
-                f"`{link['gamertag']}`. "
-                f"Removed {deleted} stored claim(s)."
+                f"`{link['gamertag']}`.\n"
+                f"Removed **{deleted}** stored "
+                "claim(s).\n\n"
+                "🔒 This admin action was hidden "
+                "from public Rust chat."
             ),
             ephemeral=True,
         )

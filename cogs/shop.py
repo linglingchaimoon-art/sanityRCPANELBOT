@@ -15,6 +15,7 @@ from discord.ext import commands
 
 from config import DATABASE_PATH
 from services.database import get_link_by_discord
+from services.helpers import announce_shop_purchase
 
 
 log = logging.getLogger("sanity2x.shop")
@@ -1572,6 +1573,26 @@ class MarketView(discord.ui.View):
         new_wallet = await get_wallet(
             interaction.user.id
         )
+
+        try:
+            announced, announce_response = (
+                await announce_shop_purchase(
+                    self.bot.rcon_service,
+                    gamertag,
+                    item.name,
+                )
+            )
+
+            if not announced:
+                log.warning(
+                    "Purchase delivered but announcement failed: %s",
+                    announce_response,
+                )
+
+        except Exception:
+            log.exception(
+                "Purchase delivered but announcement raised an error"
+            )
 
         success_embed = discord.Embed(
             title="PURCHASE COMPLETE",
