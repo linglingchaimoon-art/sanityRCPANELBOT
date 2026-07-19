@@ -1,4 +1,5 @@
 import logging
+import os
 
 import discord
 from discord.ext import commands
@@ -7,10 +8,21 @@ from config import DISCORD_TOKEN, GUILD_ID, validate_config
 from services.database import init_database
 from services.rcon import RconService
 
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+)
+
+logger = logging.getLogger(__name__)
+
+database_path = os.getenv(
+    "DATABASE_PATH",
+    "/data/sanity2x.db",
+)
+
+logger.info(
+    "Using SQLite database: %s",
+    database_path,
 )
 
 
