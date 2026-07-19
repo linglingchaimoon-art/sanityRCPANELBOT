@@ -294,20 +294,85 @@ async def checkout(user_id: int, gamertag: str, item: Item, delivered: bool, det
     return True, "ok"
 
 
+async def make_home_embed(user_id: int) -> discord.Embed:
+    data = await wallet(user_id)
+    level, title = rep_level(data["reputation_xp"])
+    featured = category_items("featured")
+
+    e = discord.Embed(
+        title="SANITY MARKET",
+        description=(
+            "**Clean. Fair. Instant delivery.**\n"
+            "Spend Sanity Coins on useful Vanilla 2x supplies.\n\n"
+            "Use the first menu to choose a department, then choose one item."
+        ),
+        color=COLOR,
+    )
+    e.add_field(name="YOUR BALANCE", value=f"🪙 **{data['balance']:,} SC**", inline=True)
+    e.add_field(name="MERCHANT RANK", value=f"🏅 **{title}** · Level {level}", inline=True)
+    e.add_field(name="DELIVERY", value="⚡ **Direct to your linked gamertag**", inline=False)
+
+    featured_text = "\n".join(
+        f"{item.emoji} **{item.name}**  ·  `{item.price:,} SC`"
+        for item in featured[:5]
+    )
+    e.add_field(name="FEATURED", value=featured_text or "No featured items.", inline=False)
+    e.set_footer(text="Sanity2X • Select a department below")
+    return e
+
+
+async def make_category_embed(user_id: int, category: str) -> discord.Embed:
+    data = await wallet(user_id)
+    emoji, name = CATEGORIES[category]
+    items = category_items(category)
+
+    e = discord.Embed(
+        title=f"{emoji} {name.upper()}",
+        description=(
+            f"**{len(items)} item{'s' if len(items) != 1 else ''} available**\n"
+            "Choose an item from the second menu to view its details."
+        ),
+        color=COLOR,
+    )
+    e.add_field(name="BALANCE", value=f"🪙 **{data['balance']:,} SC**", inline=True)
+    e.add_field(name="DEPARTMENT", value=f"**{name}**", inline=True)
+    e.set_footer(text="Sanity2X Market • Select an item below")
+    return e
+
+
 async def make_item_embed(user_id: int, item: Item):
     data = await wallet(user_id)
     stock = await stock_for(item)
     left = await cooldown_left(user_id, item)
     level, title = rep_level(data["reputation_xp"])
-    e = discord.Embed(title=f"{item.emoji} {item.name}", description=item.description, color=COLOR)
-    e.add_field(name="Price", value=f"🪙 **{item.price:,} SC**")
-    e.add_field(name="Stock", value="∞" if stock is None else f"**{stock}** left")
-    e.add_field(name="Cooldown", value="None" if not item.cooldown else ("Ready" if left <= 0 else fmt(left)))
-    e.add_field(name="Wallet", value=f"🪙 **{data['balance']:,} SC**")
-    e.add_field(name="Reputation", value=f"**{title}** · Level {level}")
+
+    status = "READY"
+    if stock is not None and stock <= 0:
+        status = "SOLD OUT"
+    elif left > 0:
+        status = f"COOLDOWN · {fmt(left)}"
+    elif level < item.rep_required:
+        status = f"LOCKED · LEVEL {item.rep_required}"
+
+    e = discord.Embed(
+        title=f"{item.emoji} {item.name}",
+        description=f"{item.description}\n\n**STATUS:** `{status}`",
+        color=COLOR,
+    )
+    e.add_field(name="PRICE", value=f"🪙 **{item.price:,} SC**", inline=True)
+    e.add_field(name="YOUR BALANCE", value=f"🪙 **{data['balance']:,} SC**", inline=True)
+    e.add_field(name="STOCK", value="**Unlimited**" if stock is None else f"**{stock} remaining**", inline=True)
+
+    if item.cooldown:
+        e.add_field(
+            name="COOLDOWN",
+            value="**Ready now**" if left <= 0 else f"**{fmt(left)}**",
+            inline=True,
+        )
     if item.rep_required:
-        e.add_field(name="Required", value=f"Merchant level **{item.rep_required}**")
-    e.set_footer(text="Sanity2X Market • Earned currency • Vanilla 2x friendly")
+        e.add_field(name="REQUIRED RANK", value=f"**Merchant Level {item.rep_required}**", inline=True)
+
+    e.set_footer(text=f"{title} • Use Buy Now to confirm delivery")
     return e
 
 
@@ -315,38 +380,55 @@ class ItemSelect(discord.ui.Select):
     def __init__(self, view: "MarketView", category: str):
         self.market = view
         options = [
-            discord.SelectOption(label=x.name, value=x.key, emoji=x.emoji, description=f"{x.price:,} SC • {x.description}"[:100])
+            discord.SelectOption(
+                label=x.name,
+                value=x.key,
+                emoji=x.emoji,
+                description=f"{x.price:,} SC"[:100],
+            )
             for x in category_items(category)[:25]
-        ] or [discord.SelectOption(label="No items", value="none")]
-        super().__init__(placeholder="Choose an item", options=options, row=1)
+        ] or [discord.SelectOption(label="No items available", value="none", emoji="🚫")]
+        super().__init__(
+            placeholder="2. Select an item",
+            options=options,
+            row=1,
+        )
 
     async def callback(self, interaction: discord.Interaction):
         if self.values[0] == "none":
             await interaction.response.defer()
             return
         self.market.selected = self.values[0]
-        await interaction.response.edit_message(embed=await make_item_embed(interaction.user.id, ITEMS[self.values[0]]), view=self.market)
+        await interaction.response.edit_message(
+            embed=await make_item_embed(interaction.user.id, ITEMS[self.values[0]]),
+            view=self.market,
+        )
 
 
 class CategorySelect(discord.ui.Select):
     def __init__(self, view: "MarketView"):
         self.market = view
         super().__init__(
-            placeholder="Browse departments",
-            options=[discord.SelectOption(label=name, value=key, emoji=emoji) for key, (emoji, name) in CATEGORIES.items()],
+            placeholder="1. Select a department",
+            options=[
+                discord.SelectOption(label=name, value=key, emoji=emoji)
+                for key, (emoji, name) in CATEGORIES.items()
+            ],
             row=0,
         )
 
     async def callback(self, interaction: discord.Interaction):
         category = self.values[0]
+        self.market.category = category
         self.market.selected = None
         for child in list(self.market.children):
             if isinstance(child, ItemSelect):
                 self.market.remove_item(child)
         self.market.add_item(ItemSelect(self.market, category))
-        emoji, name = CATEGORIES[category]
-        text = "\n".join(f"{x.emoji} **{x.name}** — 🪙 {x.price:,} SC" for x in category_items(category))
-        await interaction.response.edit_message(embed=discord.Embed(title=f"{emoji} {name}", description=text or "Empty", color=COLOR), view=self.market)
+        await interaction.response.edit_message(
+            embed=await make_category_embed(interaction.user.id, category),
+            view=self.market,
+        )
 
 
 class MarketView(discord.ui.View):
@@ -354,17 +436,21 @@ class MarketView(discord.ui.View):
         super().__init__(timeout=300)
         self.bot = bot
         self.owner_id = owner_id
+        self.category = "featured"
         self.selected = None
         self.add_item(CategorySelect(self))
         self.add_item(ItemSelect(self, "featured"))
 
     async def interaction_check(self, interaction):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Use `/shop` to open your own menu.", ephemeral=True)
+            await interaction.response.send_message(
+                "This market belongs to another user. Use `/shop` to open yours.",
+                ephemeral=True,
+            )
             return False
         return True
 
-    @discord.ui.button(label="Buy now", emoji="🛒", style=discord.ButtonStyle.success, row=2)
+    @discord.ui.button(label="Buy Now", emoji="🛒", style=discord.ButtonStyle.success, row=2)
     async def buy(self, interaction, button):
         if not self.selected:
             await interaction.response.send_message("Select an item first.", ephemeral=True)
@@ -385,11 +471,11 @@ class MarketView(discord.ui.View):
             return
         current_stock = await stock_for(item)
         if current_stock is not None and current_stock <= 0:
-            await interaction.followup.send("Sold out.", ephemeral=True)
+            await interaction.followup.send("This item is sold out.", ephemeral=True)
             return
         left = await cooldown_left(interaction.user.id, item)
         if left > 0:
-            await interaction.followup.send(f"Cooldown: **{fmt(left)}**.", ephemeral=True)
+            await interaction.followup.send(f"Available again in **{fmt(left)}**.", ephemeral=True)
             return
         gamertag = str(link["gamertag"])
         delivered, detail = await deliver(self.bot, gamertag, item)
@@ -401,23 +487,50 @@ class MarketView(discord.ui.View):
             await interaction.followup.send("Delivery failed and **no SC was taken**.", ephemeral=True)
         else:
             balance = (await wallet(interaction.user.id))["balance"]
-            await interaction.followup.send(f"✅ Delivered **{item.name}** to `{gamertag}`.\n🪙 Balance: **{balance:,} SC**", ephemeral=True)
+            await interaction.followup.send(
+                f"✅ **Purchase complete**\n"
+                f"{item.emoji} {item.name} → `{gamertag}`\n"
+                f"🪙 Balance: **{balance:,} SC**",
+                ephemeral=True,
+            )
 
-    @discord.ui.button(label="Wishlist", emoji="❤️", style=discord.ButtonStyle.secondary, row=2)
+    @discord.ui.button(label="Save", emoji="♡", style=discord.ButtonStyle.secondary, row=2)
     async def wish(self, interaction, button):
         if not self.selected:
             await interaction.response.send_message("Select an item first.", ephemeral=True)
             return
         async with aiosqlite.connect(DATABASE_PATH) as db:
-            row = await (await db.execute("SELECT 1 FROM shop_wishlist WHERE discord_id=? AND item_key=?", (interaction.user.id, self.selected))).fetchone()
+            row = await (await db.execute(
+                "SELECT 1 FROM shop_wishlist WHERE discord_id=? AND item_key=?",
+                (interaction.user.id, self.selected),
+            )).fetchone()
             if row:
-                await db.execute("DELETE FROM shop_wishlist WHERE discord_id=? AND item_key=?", (interaction.user.id, self.selected))
-                message = "Removed from wishlist."
+                await db.execute(
+                    "DELETE FROM shop_wishlist WHERE discord_id=? AND item_key=?",
+                    (interaction.user.id, self.selected),
+                )
+                message = "Removed from your saved items."
             else:
-                await db.execute("INSERT INTO shop_wishlist VALUES(?,?,?)", (interaction.user.id, self.selected, now_iso()))
-                message = "Added to wishlist."
+                await db.execute(
+                    "INSERT INTO shop_wishlist VALUES(?,?,?)",
+                    (interaction.user.id, self.selected, now_iso()),
+                )
+                message = "Saved to your wishlist."
             await db.commit()
         await interaction.response.send_message(message, ephemeral=True)
+
+    @discord.ui.button(label="Home", emoji="⌂", style=discord.ButtonStyle.secondary, row=2)
+    async def home(self, interaction, button):
+        self.category = "featured"
+        self.selected = None
+        for child in list(self.children):
+            if isinstance(child, ItemSelect):
+                self.remove_item(child)
+        self.add_item(ItemSelect(self, "featured"))
+        await interaction.response.edit_message(
+            embed=await make_home_embed(interaction.user.id),
+            view=self,
+        )
 
 
 class Shop(commands.Cog):
@@ -429,14 +542,11 @@ class Shop(commands.Cog):
 
     @app_commands.command(name="shop", description="Open the Sanity2X coin market.")
     async def shop(self, interaction: discord.Interaction):
-        data = await wallet(interaction.user.id)
-        text = "\n".join(f"{x.emoji} **{x.name}** — 🪙 {x.price:,} SC" for x in category_items("featured"))
-        e = discord.Embed(
-            title="🏪 Sanity2X Market",
-            description=f"Earned currency only. No real-money checkout.\n\n**Balance:** 🪙 {data['balance']:,} SC\n\n**Featured**\n{text}",
-            color=COLOR,
+        await interaction.response.send_message(
+            embed=await make_home_embed(interaction.user.id),
+            view=MarketView(self.bot, interaction.user.id),
+            ephemeral=True,
         )
-        await interaction.response.send_message(embed=e, view=MarketView(self.bot, interaction.user.id), ephemeral=True)
 
     @app_commands.command(name="wallet", description="View your Sanity Coin wallet.")
     async def wallet_cmd(self, interaction: discord.Interaction):
