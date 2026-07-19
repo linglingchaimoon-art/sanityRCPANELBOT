@@ -611,56 +611,6 @@ def get_rcon_service(bot):
     return None
 
 
-def _clean_chat_text(value: str) -> str:
-    """Remove characters that could break an RCON chat command."""
-    return (
-        str(value)
-        .replace('"', "")
-        .replace("\n", " ")
-        .replace("\r", " ")
-        .strip()
-    )
-
-
-async def announce_shop_purchase(
-    service,
-    gamertag: str,
-    item: Item,
-) -> tuple[bool, str]:
-    player = _clean_chat_text(gamertag)
-    item_name = _clean_chat_text(item.name)
-
-    # Detect VIP-style purchases
-    lower = item_name.lower()
-
-    if "diamond" in lower:
-        emoji = "💎"
-    elif "ultimate" in lower:
-        emoji = "👑"
-    elif "vip" in lower:
-        emoji = "⭐"
-    elif "garage" in lower:
-        emoji = "🚪"
-    elif "jackhammer" in lower:
-        emoji = "⛏️"
-    elif "chainsaw" in lower:
-        emoji = "🪓"
-    elif "wood" in lower:
-        emoji = "🌲"
-    elif "stone" in lower:
-        emoji = "🪨"
-    elif "metal" in lower:
-        emoji = "🔩"
-    else:
-        emoji = "📦"
-
-    message = (
-        f'global.say "🛒 SANITY MARKET | {emoji} {player} purchased {item_name} | ✅ Delivered!"'
-    )
-
-    return await service.send_command(message)
-
-
 async def deliver_item(
     bot,
     gamertag: str,
@@ -696,21 +646,6 @@ async def deliver_item(
     )
 
     details: list[str] = []
-
-    # Hide Rust's built-in white admin/debug messages such as:
-    # "gave Player 1 x Garage Door". This server setting controls
-    # whether commands such as inventory.giveto are broadcast in chat.
-    try:
-        hidden, hide_response = await service.send_command(
-            "global.broadcastadmincommands 0"
-        )
-        if not hidden:
-            log.warning(
-                "Could not disable admin-command broadcasts: %s",
-                hide_response,
-            )
-    except Exception:
-        log.exception("Could not disable admin-command broadcasts")
 
     for rust_item, amount in rewards:
         command = GIVE_TEMPLATE.format(
@@ -1665,33 +1600,6 @@ class MarketView(discord.ui.View):
         success_embed.set_footer(
             text="Sanity2X Market • Delivery successful"
         )
-
-        # Send the custom Sanity Market announcement only after delivery
-        # and database checkout both succeed.
-        service = get_rcon_service(self.bot)
-
-        if service is not None:
-            try:
-                announced, announcement_response = (
-                    await announce_shop_purchase(
-                        service,
-                        gamertag,
-                        item,
-                    )
-                )
-
-                if not announced:
-                    log.warning(
-                        "Shop purchase announcement failed for %s: %s",
-                        gamertag,
-                        announcement_response,
-                    )
-            except Exception:
-                # Announcement failure must never undo or duplicate a purchase.
-                log.exception(
-                    "Failed to announce shop purchase for %s",
-                    gamertag,
-                )
 
         await interaction.followup.send(
             embed=success_embed,
