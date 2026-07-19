@@ -25,7 +25,6 @@ WARNING_COLOR = 0xF1C40F
 DANGER_COLOR = 0xE74C3C
 
 DAILY_REWARD = int(os.getenv("SHOP_DAILY_REWARD", "350"))
-SHOP_LOG_CHANNEL_ID = int(os.getenv("SHOP_LOG_CHANNEL_ID", "0") or 0)
 GIVE_TEMPLATE = os.getenv(
     "SHOP_GIVE_COMMAND_TEMPLATE",
     'inventory.giveto "{player}" "{item}" {amount}',
@@ -930,88 +929,6 @@ def progress_bar(
     )
 
 
-
-async def send_shop_purchase_log(
-    bot,
-    *,
-    member: discord.Member | discord.User,
-    gamertag: str,
-    item: Item,
-    remaining_balance: int,
-) -> None:
-    """Send a successful shop purchase to a Discord log channel."""
-    if not SHOP_LOG_CHANNEL_ID:
-        log.warning(
-            "SHOP_LOG_CHANNEL_ID is not configured; purchase log skipped."
-        )
-        return
-
-    channel = bot.get_channel(SHOP_LOG_CHANNEL_ID)
-
-    if channel is None:
-        try:
-            channel = await bot.fetch_channel(SHOP_LOG_CHANNEL_ID)
-        except discord.HTTPException:
-            log.exception(
-                "Could not fetch shop log channel %s",
-                SHOP_LOG_CHANNEL_ID,
-            )
-            return
-
-    embed = discord.Embed(
-        title="🛒 Sanity Market Purchase",
-        description="A shop purchase was delivered successfully.",
-        color=SUCCESS_COLOR,
-        timestamp=utcnow(),
-    )
-
-    embed.add_field(
-        name="Discord Member",
-        value=f"{member.mention}\n`{member.id}`",
-        inline=True,
-    )
-    embed.add_field(
-        name="Rust Account",
-        value=f"`{gamertag}`",
-        inline=True,
-    )
-    embed.add_field(
-        name="Item",
-        value=f"{item.icon} **{item.name}**",
-        inline=False,
-    )
-    embed.add_field(
-        name="Price",
-        value=f"🪙 **{item.price:,} SC**",
-        inline=True,
-    )
-    embed.add_field(
-        name="Remaining Balance",
-        value=f"🪙 **{remaining_balance:,} SC**",
-        inline=True,
-    )
-    embed.add_field(
-        name="Delivery",
-        value="✅ Successful",
-        inline=True,
-    )
-
-    embed.set_footer(
-        text=f"Item key: {item.key}"
-    )
-
-    try:
-        await channel.send(
-            embed=embed,
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
-    except discord.HTTPException:
-        log.exception(
-            "Failed to send shop purchase log for %s",
-            gamertag,
-        )
-
-
 async def make_home_embed(
     discord_id: int,
 ) -> discord.Embed:
@@ -1655,19 +1572,6 @@ class MarketView(discord.ui.View):
         new_wallet = await get_wallet(
             interaction.user.id
         )
-
-        try:
-            await send_shop_purchase_log(
-                self.bot,
-                member=interaction.user,
-                gamertag=gamertag,
-                item=item,
-                remaining_balance=int(new_wallet["balance"]),
-            )
-        except Exception:
-            log.exception(
-                "Unexpected error while sending shop purchase log"
-            )
 
         success_embed = discord.Embed(
             title="PURCHASE COMPLETE",
