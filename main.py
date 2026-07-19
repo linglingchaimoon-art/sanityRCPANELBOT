@@ -51,6 +51,7 @@ class Sanity2XBot(commands.Bot):
             "cogs.shop",
             "cogs.verify",
             "cogs.support",
+            "cogs.voice",
         ]
 
         for extension in extensions:
