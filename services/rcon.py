@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 import websockets # type: ignore
 
@@ -62,6 +62,8 @@ class RconService:
         self.listener_task: Optional[asyncio.Task] = None
         self.identifier = 0
         self.send_lock = asyncio.Lock()
+        self.pending_commands: dict[int, asyncio.Future[dict[str, Any]]] = {}
+        self.command_timeout_seconds = 12.0
 
         self.recent_events: dict[tuple[str, str], float] = {}
 
@@ -109,6 +111,9 @@ class RconService:
             self.websocket = None
 
         self.pending_outpost.clear()
+        self._fail_pending_commands(
+            "Error: RCON service stopped before Rust replied."
+        )
 
         logger.info("RCON service stopped.")
 
@@ -116,6 +121,13 @@ class RconService:
         self,
         command: str,
     ) -> tuple[bool, str]:
+        """Send an RCON command and wait for its matching response.
+
+        A command is only reported as successful after the listener receives
+        a response carrying the same WebRCON Identifier. This prevents shop
+        deliveries and VIP claims from being marked successful merely because
+        the websocket accepted the outgoing payload.
+        """
         if RCON_MOCK_COMMANDS:
             logger.warning(
                 "[MOCK RCON COMMAND] %s",
@@ -123,38 +135,229 @@ class RconService:
             )
             return True, "Mock mode"
 
-        if self.websocket is None:
+        websocket = self.websocket
+
+        if websocket is None:
             return False, "RCON is not connected."
+
+        loop = asyncio.get_running_loop()
 
         async with self.send_lock:
             self.identifier += 1
+            identifier = self.identifier
+
+            response_future: asyncio.Future[dict[str, Any]] = (
+                loop.create_future()
+            )
+
+            self.pending_commands[identifier] = response_future
 
             payload = {
-                "Identifier": self.identifier,
+                "Identifier": identifier,
                 "Message": command,
                 "Name": "WebRcon",
             }
 
             try:
-                await self.websocket.send(
+                await websocket.send(
                     json.dumps(payload)
                 )
 
                 logger.info(
-                    "[RCON SENT] %s",
+                    "[RCON SENT] Identifier=%s Command=%s",
+                    identifier,
                     command,
                 )
 
-                return (
-                    True,
-                    f"Sent with identifier {self.identifier}",
+            except Exception as exc:
+                self.pending_commands.pop(
+                    identifier,
+                    None,
                 )
 
-            except Exception as exc:
+                if not response_future.done():
+                    response_future.cancel()
+
                 logger.exception(
                     "Failed to send RCON command"
                 )
                 return False, str(exc)
+
+        try:
+            response = await asyncio.wait_for(
+                response_future,
+                timeout=self.command_timeout_seconds,
+            )
+
+        except asyncio.TimeoutError:
+            self.pending_commands.pop(
+                identifier,
+                None,
+            )
+
+            logger.warning(
+                "[RCON TIMEOUT] Identifier=%s Command=%s",
+                identifier,
+                command,
+            )
+
+            return (
+                False,
+                (
+                    "Rust did not acknowledge the command "
+                    f"within {self.command_timeout_seconds:g} seconds."
+                ),
+            )
+
+        except asyncio.CancelledError:
+            self.pending_commands.pop(
+                identifier,
+                None,
+            )
+            raise
+
+        response_message = str(
+            response.get("Message", "")
+        ).replace("\u0000", "").strip()
+
+        response_type = str(
+            response.get("Type", "")
+        ).strip()
+
+        success, detail = self._evaluate_command_response(
+            response_message,
+            response_type,
+            identifier,
+        )
+
+        logger.info(
+            "[RCON RESPONSE] Identifier=%s Success=%s Type=%s Message=%s",
+            identifier,
+            success,
+            response_type or "unknown",
+            response_message or "<empty>",
+        )
+
+        return success, detail
+
+    def _evaluate_command_response(
+        self,
+        message: str,
+        response_type: str,
+        identifier: int,
+    ) -> tuple[bool, str]:
+        """Convert a matching WebRCON response into a result tuple.
+
+        Rust often acknowledges successful commands with an empty response,
+        so an empty message is considered a valid acknowledgement. Known error
+        wording is treated as a failed command.
+        """
+        normalized_message = normalized(message)
+
+        error_markers = (
+            "unknown command",
+            "command not found",
+            "invalid command",
+            "invalid arguments",
+            "syntax error",
+            "permission denied",
+            "not allowed",
+            "no player found",
+            "player not found",
+            "couldn't find player",
+            "could not find player",
+            "failed",
+            "exception",
+            "error:",
+        )
+
+        if any(
+            marker in normalized_message
+            for marker in error_markers
+        ):
+            return (
+                False,
+                message
+                or (
+                    "Rust rejected the command "
+                    f"with identifier {identifier}."
+                ),
+            )
+
+        if message:
+            return True, message
+
+        response_label = (
+            response_type
+            if response_type
+            else "acknowledgement"
+        )
+
+        return (
+            True,
+            (
+                f"Rust acknowledged identifier {identifier} "
+                f"({response_label})."
+            ),
+        )
+
+    def _resolve_command_response(
+        self,
+        raw_message: str,
+    ) -> bool:
+        """Resolve a pending command from a WebRCON response.
+
+        Returns True when the message belonged to a pending command. Chat
+        messages and unsolicited server output continue through the normal
+        chat-trigger pipeline.
+        """
+        try:
+            payload = json.loads(raw_message)
+        except json.JSONDecodeError:
+            return False
+
+        if not isinstance(payload, dict):
+            return False
+
+        raw_identifier = payload.get("Identifier")
+
+        try:
+            identifier = int(raw_identifier)
+        except (TypeError, ValueError):
+            return False
+
+        future = self.pending_commands.pop(
+            identifier,
+            None,
+        )
+
+        if future is None:
+            return False
+
+        if not future.done():
+            future.set_result(payload)
+
+        return True
+
+    def _fail_pending_commands(
+        self,
+        reason: str,
+    ) -> None:
+        for identifier, future in list(
+            self.pending_commands.items()
+        ):
+            if future.done():
+                continue
+
+            future.set_result(
+                {
+                    "Identifier": identifier,
+                    "Message": reason,
+                    "Type": "Error",
+                }
+            )
+
+        self.pending_commands.clear()
 
     def _extract_chat(self, raw_message: str):
         try:
@@ -386,6 +589,9 @@ class RconService:
                 raw_message,
             )
 
+        if self._resolve_command_response(raw_message):
+            return
+
         chat = self._extract_chat(raw_message)
 
         if chat is None:
@@ -538,6 +744,9 @@ class RconService:
 
             finally:
                 self.websocket = None
+                self._fail_pending_commands(
+                    "Error: RCON disconnected before Rust replied."
+                )
 
             await asyncio.sleep(
                 reconnect_delay
