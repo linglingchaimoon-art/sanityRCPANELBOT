@@ -637,12 +637,11 @@ async def handle_outpost_trigger(
         }
 
     command = (
-        f"global.teleportpos "
-        f"{OUTPOST_X} "
-        f"{OUTPOST_Y} "
-        f"{OUTPOST_Z} "
-        f'"{rust_user_id}"'
-    )
+    f'global.teleportposrot '
+    f'({OUTPOST_X},{OUTPOST_Y},{OUTPOST_Z}) '
+    f'"{rust_user_id}" '
+    f'"1"'
+)
 
     sent, response = await rcon_service.send_command(
         command
