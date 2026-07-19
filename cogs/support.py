@@ -10,7 +10,7 @@ SUPPORT_TICKETS_FILE = "data/support_tickets.json"
 
 TRANSCRIPT_CHANNEL_ID = 1527113189458706463
 
-SUPPORT_BANNER_URL = "/Users/phatje/Desktop/ChatGPT Image 26 jun 2026, 08_00_45 kopie.png"
+# SUPPORT_BANNER_URL = "/Users/phatje/Desktop/ChatGPT Image 26 jun 2026, 08_00_45 kopie.png"
 
 INGAME_STAFF_ROLE_IDS = [
     1520644874246819970,
@@ -424,7 +424,7 @@ class Support(commands.Cog):
             inline=False
         )
 
-        embed.set_image(url=SUPPORT_BANNER_URL)
+      #  embed.set_image(url=SUPPORT_BANNER_URL)
         embed.set_footer(text="Sanity2X • Rust Console Community • Support System")
         return embed
 
