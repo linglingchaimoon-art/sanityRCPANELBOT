@@ -611,6 +611,39 @@ def get_rcon_service(bot):
     return None
 
 
+def _clean_chat_text(value: str) -> str:
+    """Remove characters that could break an RCON chat command."""
+    return (
+        str(value)
+        .replace('"', "")
+        .replace("\n", " ")
+        .replace("\r", " ")
+        .strip()
+    )
+
+
+async def announce_shop_purchase(
+    service,
+    gamertag: str,
+    item: Item,
+) -> tuple[bool, str]:
+    """Send one clean public Rust chat message after a completed purchase."""
+    player = _clean_chat_text(gamertag)
+    item_name = _clean_chat_text(item.name)
+
+    # Rust Console controls the actual chat colour. Keep the message short,
+    # clean and readable instead of sending several white lines.
+    message = (
+        f"[ SANITY MARKET ] {player} purchased {item_name} | "
+        "DELIVERY COMPLETE"
+    )
+
+    success, response = await service.send_command(
+        f'global.say "{message}"'
+    )
+    return bool(success), str(response)
+
+
 async def deliver_item(
     bot,
     gamertag: str,
@@ -646,6 +679,21 @@ async def deliver_item(
     )
 
     details: list[str] = []
+
+    # Hide Rust's built-in white admin/debug messages such as:
+    # "gave Player 1 x Garage Door". This server setting controls
+    # whether commands such as inventory.giveto are broadcast in chat.
+    try:
+        hidden, hide_response = await service.send_command(
+            "global.broadcastadmincommands 0"
+        )
+        if not hidden:
+            log.warning(
+                "Could not disable admin-command broadcasts: %s",
+                hide_response,
+            )
+    except Exception:
+        log.exception("Could not disable admin-command broadcasts")
 
     for rust_item, amount in rewards:
         command = GIVE_TEMPLATE.format(
@@ -1600,6 +1648,33 @@ class MarketView(discord.ui.View):
         success_embed.set_footer(
             text="Sanity2X Market • Delivery successful"
         )
+
+        # Send the custom Sanity Market announcement only after delivery
+        # and database checkout both succeed.
+        service = get_rcon_service(self.bot)
+
+        if service is not None:
+            try:
+                announced, announcement_response = (
+                    await announce_shop_purchase(
+                        service,
+                        gamertag,
+                        item,
+                    )
+                )
+
+                if not announced:
+                    log.warning(
+                        "Shop purchase announcement failed for %s: %s",
+                        gamertag,
+                        announcement_response,
+                    )
+            except Exception:
+                # Announcement failure must never undo or duplicate a purchase.
+                log.exception(
+                    "Failed to announce shop purchase for %s",
+                    gamertag,
+                )
 
         await interaction.followup.send(
             embed=success_embed,
